@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Study zone</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        
+        :root {
+            --accent: #ffffff;
+            --bg-deep: #000000;
+            --bg-light: #111111;
+            --sidebar-bg: #080808; 
+            --text-heading: #ffffff;
+            --text-main: #d4d4d4;
+            --text-muted: #9a9a9a;
+            --glass-border: #222222;
+        }
+
+        
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; cursor: none !important; }
+        iframe { cursor: auto !important; }
+
+        html, body {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background-color: var(--bg-deep);
+            color: var(--text-main);
+        }
+
+        
+        #custom-v-cursor {
+            position: fixed;
+            top: 0; left: 0;
+            width: 32px; height: 32px;
+            z-index: 2147483647; 
+            pointer-events: none;
+            will-change: transform;
+            opacity: 0; 
+            transition: opacity 0.1s ease-out;
+            
+        }
+
+        
+        #app-container {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            display: flex;
+            flex-direction: row; 
+            background-color: var(--bg-deep);
+            z-index: 1;
+        }
+
+        
+        @keyframes starDrift {
+            0% { background-position: 0 0, 40px 60px, 130px 270px, 70px 100px; }
+            100% { background-position: 550px 550px, 390px 410px, 380px 520px, 220px 250px; }
+        }
+        #app-container::before {
+            content: ''; position: absolute; inset: 0; z-index: -1;
+            background-image: radial-gradient(white, rgba(255,255,255,.2) 2px, transparent 40px),
+                              radial-gradient(white, rgba(255,255,255,.15) 1px, transparent 30px),
+                              radial-gradient(white, rgba(255,255,255,.1) 2px, transparent 40px);
+            background-size: 550px 550px, 350px 350px, 250px 250px;
+            animation: starDrift 120s linear infinite;
+        }
+
+        
+        #studyzone-decoy {
+            position: fixed; inset: 0; z-index: 9999999;
+            background: #e0e0e0; color: #222;
+            font-family: Verdana, Arial, sans-serif; font-size: 12px;
+            overflow-y: auto; transition: opacity 0.1s ease;
+            opacity: 0; pointer-events: none; display: none;
+        }
+        #studyzone-decoy.active { opacity: 1; pointer-events: auto; display: block; cursor: auto !important; }
+        #studyzone-decoy #wrapper { width: 900px; margin: 15px auto; background: #fff; border: 1px solid #999; }
+        #studyzone-decoy #header { background: #003d7a; padding: 25px; border-bottom: 4px solid #002855; }
+        #studyzone-decoy #header h1 { color: #fff; font-size: 32px; margin-bottom: 5px; }
+        #studyzone-decoy #header p { color: #99ccff; font-size: 13px; }
+        #studyzone-decoy #nav { background: #0066cc; overflow: hidden; }
+        #studyzone-decoy #nav a { float: left; color: #fff; padding: 10px 20px; text-decoration: none; border-right: 1px solid #0052a3; font-weight: bold; cursor: auto !important; }
+        #studyzone-decoy #main { overflow: hidden; }
+        #studyzone-decoy #sidebar-school { float: left; width: 200px; background: #f7f7f7; padding: 15px; border-right: 1px solid #ccc;}
+        #studyzone-decoy #content-school { float: left; width: 685px; padding: 20px; }
+
+        
+        #sidebar-spacer {
+            width: 85px; min-width: 85px; height: 100vh;
+            flex-shrink: 0; background: transparent; z-index: 10;
+        }
+
+        #sidebar-wrapper {
+            position: absolute; left: 0; top: 0;
+            width: 260px; height: 100vh;
+            background: var(--sidebar-bg);
+            border-right: 1px solid var(--glass-border);
+            z-index: 50; overflow: hidden; 
+            transform: translate3d(-175px, 0, 0); 
+            transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+            will-change: transform;
+        }
+
+        #sidebar-content {
+            width: 260px; height: 100%;
+            display: flex; flex-direction: column; padding: 25px 0;
+            transform: translate3d(175px, 0, 0); 
+            transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+            will-change: transform;
+        }
+        
+        #sidebar-wrapper.expanded { transform: translate3d(0, 0, 0); }
+        #sidebar-wrapper.expanded #sidebar-content { transform: translate3d(0, 0, 0); }
+
+        
+        .sidebar-brand { display: flex; align-items: center; margin: 0 12px 30px 12px; height: 44px; }
+        .brand-icon-wrapper { width: 61px; min-width: 61px; display: flex; justify-content: center; }
+        .brand-icon { width: 42px; height: 42px; background: var(--bg-light); border: 1px solid var(--glass-border); border-radius: 12px; display: flex; align-items: center; justify-content: center; }
+        .brand-icon .lucide { color: var(--accent); }
+        .brand-text { margin-left: 8px; font-size: 19px; font-weight: 700; color: var(--text-heading); opacity: 0; white-space: nowrap; transition: opacity 0.15s; }
+        
+        .nav-item {
+            display: flex; align-items: center; margin: 4px 12px; height: 48px;
+            border-radius: 12px; color: var(--text-muted); cursor: none !important;
+            transition: background 0.1s; white-space: nowrap; text-decoration: none;
+        }
+        .icon-container { width: 61px; min-width: 61px; display: flex; justify-content: center; }
+        .nav-text { opacity: 0; margin-left: 6px; transition: opacity 0.15s; }
+        .nav-item:hover, .nav-item.active { background: var(--bg-light); color: var(--text-heading); }
+        .sidebar-footer { margin-top: auto; border-top: 1px solid var(--glass-border); padding-top: 15px; }
+
+        #sidebar-wrapper.expanded .brand-text,
+        #sidebar-wrapper.expanded .nav-text { opacity: 1; transition-delay: 0.1s; }
+
+        
+        #content-area {
+            flex-grow: 1; height: 100vh; padding: 20px; position: relative;
+        }
+
+        
+        #iframe-shield {
+            position: absolute; inset: 20px; 
+            z-index: 40; background: transparent; pointer-events: none; 
+        }
+        #sidebar-wrapper.expanded ~ #content-area #iframe-shield { pointer-events: auto; }
+
+        #iframe-wrapper {
+            width: 100%; height: 100%;
+            border-radius: 24px; border: 1px solid var(--glass-border);
+            overflow: hidden; position: relative; background: var(--bg-deep);
+        }
+        #mainFrame { width: 100%; height: 100%; border: none; background: #fff; display: block; }
+
+        
+        #loaderOverlay {
+            position: absolute; inset: 0; z-index: 4500;
+            background: #080808; 
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            transition: opacity 0.3s ease;
+        }
+        .loader-ring {
+            width: 70px; height: 70px; border: 3px solid rgba(255, 255, 255, 0.1);
+            border-radius: 50%; border-top-color: var(--accent);
+            animation: spin 1s linear infinite; margin-bottom: 25px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .loading-text { font-size: 15px; letter-spacing: 6px; color: var(--text-heading); font-weight: 600; text-transform: uppercase; }
+
+    </style>
+</head>
+<body>
+
+    <svg id="custom-v-cursor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2 L22 22 L12 18 L2 22 Z" fill="#ffffff" />
+    </svg>
+
+    <div id="studyzone-decoy">
+        <div id="wrapper">
+            <div id="header">
+                <h1>StudyZone</h1>
+                <p>Your Complete Middle School Resource Center</p>
+            </div>
+            <div id="nav">
+                <a href="#">HOME</a> <a href="#">SUBJECTS</a> <a href="#">RESOURCES</a>
+            </div>
+            <div id="main">
+                <div id="sidebar-school">
+                    <h3>SUBJECTS</h3>
+                    <ul><li><a href="#">Mathematics</a></li><li><a href="#">Science</a></li><li><a href="#">English</a></li></ul>
+                </div>
+                <div id="content-school">
+                    <h2 style="color: #003d7a; font-size: 18px; border-bottom: 2px solid #0066cc; padding-bottom: 5px;">Welcome to StudyZone</h2>
+                    <p style="margin-top: 10px;">Please read Chapter 4 for your homework assignment.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="app-container">
+        
+        <div id="sidebar-spacer"></div>
+
+        <div id="sidebar-wrapper" onmouseenter="handleSidebarHover(true)" onmouseleave="handleSidebarHover(false)">
+            <nav id="sidebar-content">
+                <div class="sidebar-brand">
+                    <div class="brand-icon-wrapper">
+                        <div class="brand-icon"><i data-lucide="circle"></i></div>
+                    </div>
+                    <div class="brand-text">Infinity Games</div>
+                </div>
+
+                <a class="nav-item active" onclick="loadPage('/home', this)">
+                    <div class="icon-container"><i data-lucide="home"></i></div>
+                    <span class="nav-text">Home</span>
+                </a>
+                <a class="nav-item" onclick="loadPage('/g4m3s', this)">
+                    <div class="icon-container"><i data-lucide="gamepad-2"></i></div>
+                    <span class="nav-text">g4m3s</span>
+                </a>
+                <a class="nav-item" onclick="loadPage('/proty', this)">
+                    <div class="icon-container"><i data-lucide="compass"></i></div>
+                    <span class="nav-text">Pro*y</span>
+                </a>
+
+                <div class="sidebar-footer">
+                    <a class="nav-item" href="#" target="_blank">
+                        <div class="icon-container"><i data-lucide="message-circle"></i></div>
+                        <span class="nav-text">Discord</span>
+                    </a>
+                </div>
+            </nav>
+        </div>
+
+        <main id="content-area">
+            <div id="iframe-shield"></div>
+
+            <div id="iframe-wrapper">
+                <iframe id="mainFrame" src="https://latte-x.neocities.org/abouts" onload="hideLoader()"></iframe>
+                
+                <div id="loaderOverlay">
+                    <div class="loader-ring"></div>
+                    <div class="loading-text">Loading Orbit...</div>
+                </div>
+            </div>
+        </main>
+
+    </div>
+
+    <script src="https://latte-x.neocities.org/pilly.js"></script>
+    <script>
+        lucide.createIcons();
+
+        // Target the new wrapper instead of the nav
+        const sidebarWrapper = document.getElementById('sidebar-wrapper');
+        function handleSidebarHover(isHovering) {
+            if (isHovering) {
+                sidebarWrapper.classList.add('expanded');
+            } else {
+                sidebarWrapper.classList.remove('expanded');
+            }
+        }
+
+        function loadPage(url, element) {
+            const loader = document.getElementById('loaderOverlay');
+            loader.style.display = 'flex';
+            setTimeout(() => {
+                loader.style.opacity = '1';
+            }, 10);
+
+            document.getElementById('mainFrame').src = url;
+
+            document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
+            element.classList.add('active');
+        }
+
+        function hideLoader() {
+            const loader = document.getElementById('loaderOverlay');
+            loader.style.opacity = '0';
+            setTimeout(() => {
+                loader.style.display = 'none';
+            }, 300); 
+        }
+
+        // PANIC BUTTON
+        document.addEventListener('keydown', (e) => {
+            if (e.key === '`') {
+                const decoy = document.getElementById('studyzone-decoy');
+                decoy.classList.toggle('active');
+            }
+        });
+
+        
+        const ship = document.getElementById('custom-v-cursor');
+        const iframeWrapper = document.getElementById('iframe-wrapper');
+        
+        let mouseX = window.innerWidth / 2, mouseY = window.innerHeight / 2;
+        let shipX = window.innerWidth / 2, shipY = window.innerHeight / 2;
+        let currentAngle = 0;
+        let isCursorVisible = false;
+
+        document.addEventListener('mousemove', (e) => {
+          
+            if (document.getElementById('studyzone-decoy').classList.contains('active')) return;
+
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+
+            
+            const overIframe = e.target.closest('#iframe-wrapper') || e.target.tagName.toLowerCase() === 'iframe';
+
+            if (overIframe) {
+                if (isCursorVisible) { 
+                    ship.style.opacity = '0'; 
+                    isCursorVisible = false; 
+                }
+            } else {
+                if (!isCursorVisible) { 
+                    ship.style.opacity = '1'; 
+                    isCursorVisible = true; 
+                }
+            }
+        });
+
+        
+        if (iframeWrapper) {
+            iframeWrapper.addEventListener('mouseenter', () => { ship.style.opacity = '0'; isCursorVisible = false; });
+            iframeWrapper.addEventListener('mouseleave', () => { ship.style.opacity = '1'; isCursorVisible = true; });
+        }
+
+        
+        document.addEventListener('mouseout', (e) => {
+            if (e.relatedTarget === null) {
+                ship.style.opacity = '0';
+                isCursorVisible = false;
+            }
+        });
+
+        window.addEventListener('blur', () => {
+            ship.style.opacity = '0';
+            isCursorVisible = false;
+        });
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                ship.style.opacity = '0';
+                isCursorVisible = false;
+            }
+        });
+
+        
+        function animateCursor() {
+            const dx = mouseX - shipX;
+            const dy = mouseY - shipY;
+
+            shipX += dx * 0.45;
+            shipY += dy * 0.45;
+
+            if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+                let targetAngle = Math.atan2(dy, dx) * (180 / Math.PI);
+                currentAngle = targetAngle + 90;
+            }
+
+            ship.style.transform = `translate3d(${shipX - 16}px, ${shipY - 16}px, 0) rotate(${currentAngle}deg)`;
+            requestAnimationFrame(animateCursor);
+        }
+        
+        animateCursor();
+    </script>
+</body>
+</html>
