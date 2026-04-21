@@ -91,7 +91,7 @@ const gameHTML = `
                     <div class="icon-container"><i data-lucide="compass"></i></div>
                     <span class="nav-text">Prxy</span>
                 </a>
-                <a class="nav-item" onclick="loadPage('/aps.html', this)">
+                <a class="nav-item" onclick="loadPage('aps.html', this)">
                     <div class="icon-container"><i data-lucide="grid"></i></div>
                     <span class="nav-text">apps</span>
                 </a>
