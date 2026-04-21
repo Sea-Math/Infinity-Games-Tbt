@@ -1,259 +1,510 @@
-const gameCSS = `
-:root {
-    --accent: #ffffff;
-    --bg-deep: #000000;
-    --bg-light: #111111;
-    --sidebar-bg: #080808; 
-    --text-heading: #ffffff;
-    --text-main: #d4d4d4;
-    --text-muted: #9a9a9a;
-    --glass-border: #222222;
+// =====================================================
+// CONFIGURATION
+// =====================================================
+const DEFAULT_WISP = window.SITE_CONFIG?.defaultWisp ?? "wss://military.marincareers.org/wisp/";
+const WISP_SERVERS = [{ name: "Default Wisp", url: "wss://military.marincareers.org/wisp/" }];
+
+if (!localStorage.getItem("proxServer")) {
+    localStorage.setItem("proxServer", DEFAULT_WISP);
 }
 
-body.game-active * { box-sizing: border-box; font-family: 'Inter', sans-serif; cursor: none !important; }
-body.game-active iframe { cursor: auto !important; }
-body.game-active { overflow: hidden !important; background-color: var(--bg-deep) !important; color: var(--text-main) !important; margin: 0; padding: 0; }
-
-body.game-active > *:not(#app-container):not(#custom-v-cursor):not(script):not(style):not(link) {
-    display: none !important;
+function getAllWispServers() {
+    const customWisps = getStoredWisps();
+    return [...WISP_SERVERS, ...customWisps];
 }
 
-#custom-v-cursor { position: fixed; top: 0; left: 0; width: 32px; height: 32px; z-index: 2147483647; pointer-events: none; will-change: transform; opacity: 0; transition: opacity 0.1s ease-out; }
-#app-container { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; flex-direction: row; background-color: var(--bg-deep); z-index: 2147483646; }
-
-@keyframes starDrift {
-    0% { background-position: 0 0, 40px 60px, 130px 270px, 70px 100px; }
-    100% { background-position: 550px 550px, 390px 410px, 380px 520px, 220px 250px; }
+// =====================================================
+// BULLETPROOF HEALTH & ERROR HANDLING
+// =====================================================
+async function pingWispServer(url, timeout = 2000) {
+    return new Promise((resolve) => {
+        const start = Date.now();
+        try {
+            const ws = new WebSocket(url);
+            const timer = setTimeout(() => {
+                try { ws.close(); } catch {}
+                resolve({ url, success: false, latency: null });
+            }, timeout);
+            ws.onopen = () => { clearTimeout(timer); ws.close(); resolve({ url, success: true, latency: Date.now() - start }); };
+            ws.onerror = () => { clearTimeout(timer); ws.close(); resolve({ url, success: false, latency: null }); };
+        } catch { resolve({ url, success: false, latency: null }); }
+    });
 }
 
-#app-container::before { content: ''; position: absolute; inset: 0; z-index: -1; background-image: radial-gradient(white, rgba(255,255,255,.2) 2px, transparent 40px), radial-gradient(white, rgba(255,255,255,.15) 1px, transparent 30px), radial-gradient(white, rgba(255,255,255,.1) 2px, transparent 40px); background-size: 550px 550px, 350px 350px, 250px 250px; animation: starDrift 120s linear infinite; }
-#sidebar-spacer { width: 85px; min-width: 85px; height: 100vh; flex-shrink: 0; background: transparent; z-index: 10; }
-#sidebar-wrapper { position: absolute; left: 0; top: 0; width: 260px; height: 100vh; background: var(--sidebar-bg); border-right: 1px solid var(--glass-border); z-index: 50; overflow: hidden; transform: translate3d(-175px, 0, 0); transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1); will-change: transform; }
-#sidebar-content { width: 260px; height: 100%; display: flex; flex-direction: column; padding: 25px 0; transform: translate3d(175px, 0, 0); transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1); will-change: transform; }
-#sidebar-wrapper.expanded { transform: translate3d(0, 0, 0); }
-#sidebar-wrapper.expanded #sidebar-content { transform: translate3d(0, 0, 0); }
+async function findBestWispServer(servers, currentUrl) {
+    if (!servers || servers.length === 0) return currentUrl;
+    const results = await Promise.all(servers.map(s => pingWispServer(s.url, 2000)));
+    const working = results.filter(r => r.success).sort((a, b) => a.latency - b.latency);
+    return working.length > 0 ? working[0].url : currentUrl || servers[0]?.url;
+}
 
-.sidebar-brand { display: flex; align-items: center; margin: 0 12px 30px 12px; height: 44px; }
-.brand-icon-wrapper { width: 61px; min-width: 61px; display: flex; justify-content: center; }
-.brand-icon { width: 42px; height: 42px; background: var(--bg-light); border: 1px solid var(--glass-border); border-radius: 12px; display: flex; align-items: center; justify-content: center; }
-.brand-icon .lucide { color: var(--accent); }
-.brand-text { margin-left: 8px; font-size: 19px; font-weight: 700; color: var(--text-heading); opacity: 0; white-space: nowrap; transition: opacity 0.15s; }
-.nav-item { display: flex; align-items: center; margin: 4px 12px; height: 48px; border-radius: 12px; color: var(--text-muted); transition: background 0.1s; white-space: nowrap; text-decoration: none; cursor: none !important; }
-.icon-container { width: 61px; min-width: 61px; display: flex; justify-content: center; }
-.nav-text { opacity: 0; margin-left: 6px; transition: opacity 0.15s; }
-.nav-item:hover, .nav-item.active { background: var(--bg-light); color: var(--text-heading); }
-.sidebar-footer { margin-top: auto; border-top: 1px solid var(--glass-border); padding-top: 15px; }
+async function initializeWithBestServer() {
+    const autoswitch = localStorage.getItem('wispAutoswitch') !== 'false';
+    const allServers = getAllWispServers();
+    if (!autoswitch || allServers.length <= 1) return;
 
-#sidebar-wrapper.expanded .brand-text, #sidebar-wrapper.expanded .nav-text { opacity: 1; transition-delay: 0.1s; }
-#content-area { flex-grow: 1; height: 100vh; padding: 20px; position: relative; }
-#iframe-shield { position: absolute; inset: 20px; z-index: 40; background: transparent; pointer-events: none; }
-#sidebar-wrapper.expanded ~ #content-area #iframe-shield { pointer-events: auto; }
-#iframe-wrapper { width: 100%; height: 100%; border-radius: 24px; border: 1px solid var(--glass-border); overflow: hidden; position: relative; background: var(--bg-deep); }
-#mainFrame { width: 100%; height: 100%; border: none; background: #fff; display: block; }
-#loaderOverlay { position: absolute; inset: 0; z-index: 4500; background: #080808; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.8s ease; }
-.loader-ring { width: 70px; height: 70px; border: 3px solid rgba(255, 255, 255, 0.1); border-radius: 50%; border-top-color: var(--accent); animation: spin 1s linear infinite; margin-bottom: 25px; }
-@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-.loading-text { font-size: 15px; letter-spacing: 6px; color: var(--text-heading); font-weight: 600; text-transform: uppercase; }
-`;
+    const currentUrl = localStorage.getItem("proxServer") || DEFAULT_WISP;
+    const currentCheck = await pingWispServer(currentUrl, 2000);
+    
+    if (!currentCheck.success) {
+        console.log("Current server dead. Finding best server...");
+        const best = await findBestWispServer(allServers, currentUrl);
+        if (best && best !== currentUrl) {
+            localStorage.setItem("proxServer", best);
+            notify('info', 'Auto-switched', 'Switched to a faster proxy server.');
+        }
+    }
+}
 
-const fontLink = document.createElement('link');
-fontLink.href = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap";
-fontLink.rel = "stylesheet";
-document.head.appendChild(fontLink);
+// =====================================================
+// BROWSER STATE
+// =====================================================
+const BareMux = window.BareMux ?? { BareMuxConnection: class { setTransport() {} } };
+let sharedScramjet = null;
+let sharedConnection = null;
+let sharedConnectionReady = false;
+let tabs = [];
+let activeTabId = null;
+let nextTabId = 1;
 
-const styleEl = document.createElement('style');
-styleEl.innerHTML = gameCSS;
-document.head.appendChild(styleEl);
+const getBasePath = () => {
+    const basePath = location.pathname.replace(/[^/]*$/, '');
+    return basePath.endsWith('/') ? basePath : basePath + '/';
+};
+const getStoredWisps = () => { try { return JSON.parse(localStorage.getItem('customWisps') ?? '[]'); } catch { return []; } };
+const getActiveTab = () => tabs.find(t => t.id === activeTabId);
+const notify = (type, title, message) => { if (typeof Notify !== 'undefined') Notify[type](title, message); };
 
-const gameHTML = `
-    <svg id="custom-v-cursor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 2 L22 22 L12 18 L2 22 Z" fill="#ffffff" />
-    </svg>
-    <div id="app-container">
-        <div id="sidebar-spacer"></div>
-        <div id="sidebar-wrapper" onmouseenter="handleSidebarHover(true)" onmouseleave="handleSidebarHover(false)">
-            <nav id="sidebar-content">
-                <div class="sidebar-brand">
-                    <div class="brand-icon-wrapper">
-                        <div class="brand-icon"><i data-lucide="circle"></i></div>
+// =====================================================
+// INITIALIZATION (With Auto-Nuke for Corruption)
+// =====================================================
+async function getSharedScramjet() {
+    if (sharedScramjet) return sharedScramjet;
+    const { ScramjetController } = $scramjetLoadController();
+    
+    sharedScramjet = new ScramjetController({
+        prefix: getBasePath() + "scramjet/",
+        files: {
+            wasm: "https://cdn.jsdelivr.net/gh/Destroyed12121/Staticsj@main/JS/scramjet.wasm.wasm",
+            all: "https://cdn.jsdelivr.net/gh/Destroyed12121/Staticsj@main/JS/scramjet.all.js",
+            sync: "https://cdn.jsdelivr.net/gh/Destroyed12121/Staticsj@main/JS/scramjet.sync.js"
+        }
+    });
+    
+    try {
+        await sharedScramjet.init();
+    } catch (err) {
+        console.warn('Scramjet cache corrupted. Auto-nuking IndexedDB...', err);
+        try {
+            ['scramjet-data', 'scrambase', 'ScramjetData'].forEach(db => indexedDB.deleteDatabase(db));
+        } catch (e) {}
+        sharedScramjet = null;
+        return getSharedScramjet(); // Retry after nuke
+    }
+    return sharedScramjet;
+}
+
+async function getSharedConnection() {
+    if (sharedConnectionReady) return sharedConnection;
+    const wispUrl = localStorage.getItem("proxServer") ?? DEFAULT_WISP;
+    sharedConnection = new BareMux.BareMuxConnection(getBasePath() + "bareworker.js");
+    
+    await sharedConnection.setTransport(
+        "https://cdn.jsdelivr.net/gh/Sea-Math/sail@main/libcurl/index.mjs",
+        [{ wisp: wispUrl }]
+    );
+    sharedConnectionReady = true;
+    return sharedConnection;
+}
+
+// Check if SW is alive before navigating
+async function ensureServiceWorker() {
+    if ('serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.ready;
+        if (!navigator.serviceWorker.controller) {
+            console.warn("Service Worker asleep! Reloading window to wake it up...");
+            window.location.reload();
+        }
+    }
+}
+
+async function initializeBrowser() {
+    const root = document.getElementById("app");
+    root.innerHTML = `
+        <div class="browser-container">
+            <div class="flex tabs" id="tabs-container"></div>
+            <div class="flex nav">
+                <button id="back-btn" title="Back"><i class="fa-solid fa-chevron-left"></i></button>
+                <button id="fwd-btn" title="Forward"><i class="fa-solid fa-chevron-right"></i></button>
+                <button id="reload-btn" title="Reload"><i class="fa-solid fa-rotate-right"></i></button>
+                <div class="address-wrapper">
+                    <input class="bar" id="address-bar" autocomplete="off" placeholder="Search or enter URL">
+                    <button id="home-btn-nav" title="Home"><i class="fa-solid fa-house"></i></button>
+                </div>
+                <button id="devtools-btn" title="DevTools"><i class="fa-solid fa-code"></i></button>
+                <button id="wisp-settings-btn" title="Proxy Settings"><i class="fa-solid fa-gear"></i></button>
+            </div>
+            <div class="loading-bar-container"><div class="loading-bar" id="loading-bar"></div></div>
+            <div class="iframe-container" id="iframe-container">
+                <div id="loading" class="message-container" style="display: none;">
+                    <div class="message-content">
+                        <div class="spinner"></div>
+                        <h1 id="loading-title">Connecting</h1>
+                        <p id="loading-url">Initializing proxy...</p>
+                        <button id="skip-btn">Skip</button>
                     </div>
-                    <div class="brand-text">Infinity Games</div>
                 </div>
-                <a class="nav-item active" onclick="loadPage('https://latte-x.neocities.org/abouts', this)">
-                    <div class="icon-container"><i data-lucide="home"></i></div>
-                    <span class="nav-text">Home</span>
-                </a>
-                <a class="nav-item" onclick="loadPage('https://latte-x.neocities.org/Chat%20Bot%20AI%20(A.I%20GPT)', this)">
-                    <div class="icon-container"><i data-lucide="gamepad-2"></i></div>
-                    <span class="nav-text">Games</span>
-                </a>
-                <a class="nav-item" onclick="loadPage('https://example.com', this)">
-                    <div class="icon-container"><i data-lucide="compass"></i></div>
-                    <span class="nav-text">Proxy</span>
-                </a>
-                <div class="sidebar-footer">
-                    <a class="nav-item" href="#" target="_blank">
-                        <div class="icon-container"><i data-lucide="message-circle"></i></div>
-                        <span class="nav-text">Discord</span>
-                    </a>
-                </div>
-            </nav>
-        </div>
-        <main id="content-area">
-            <div id="iframe-shield"></div>
-            <div id="iframe-wrapper">
-                <iframe id="mainFrame" src="https://latte-x.neocities.org/abouts" onload="hideLoader()"></iframe>
-                <div id="loaderOverlay">
-                    <div class="loader-ring"></div>
-                    <div class="loading-text">Loading Orbit...</div>
+                <div id="error" class="message-container" style="display: none;">
+                    <div class="message-content">
+                        <h1><i class="fa-solid fa-triangle-exclamation"></i> Connection Failed</h1>
+                        <p id="error-message">The proxy failed to load this page. It may be blocked or the server is down.</p>
+                        <button id="retry-error-btn" style="margin-top: 15px; padding: 8px 16px; cursor: pointer;">Try Again</button>
+                    </div>
                 </div>
             </div>
-        </main>
-    </div>
-`;
+        </div>`;
 
-document.body.insertAdjacentHTML('beforeend', gameHTML);
+    document.getElementById('back-btn').onclick = () => getActiveTab()?.frame.back();
+    document.getElementById('fwd-btn').onclick = () => getActiveTab()?.frame.forward();
+    document.getElementById('reload-btn').onclick = () => getActiveTab()?.frame.reload();
+    document.getElementById('home-btn-nav').onclick = () => window.location.href = '../index.html';
+    document.getElementById('devtools-btn').onclick = toggleDevTools;
+    document.getElementById('wisp-settings-btn').onclick = openSettings;
+    
+    document.getElementById('skip-btn').onclick = () => {
+        const tab = getActiveTab();
+        if (tab) { tab.loading = false; showIframeLoading(false); }
+    };
+    
+    document.getElementById('retry-error-btn').onclick = () => {
+        document.getElementById("error").style.display = "none";
+        getActiveTab()?.frame.reload();
+    };
 
-const externalScript = document.createElement('script');
-externalScript.src = "https://latte-x.neocities.org/pilly.js";
-document.body.appendChild(externalScript);
+    const addrBar = document.getElementById('address-bar');
+    addrBar.onkeyup = (e) => e.key === 'Enter' && handleSubmit();
+    addrBar.onfocus = () => addrBar.select();
 
-const lucideScript = document.createElement('script');
-lucideScript.src = "https://unpkg.com/lucide@latest";
-lucideScript.onload = () => {
-    lucide.createIcons();
-};
-document.body.appendChild(lucideScript);
+    window.addEventListener('message', (e) => { if (e.data?.type === 'navigate') handleSubmit(e.data.url); });
 
-
-const appContainer = document.getElementById('app-container');
-const cursorShip = document.getElementById('custom-v-cursor');
-appContainer.style.display = 'none';
-cursorShip.style.display = 'none';
-
-setTimeout(() => {
-   
-    if (!document.body.classList.contains('game-active')) {
-        document.body.classList.add('game-active');
-        appContainer.style.display = 'flex';
-        cursorShip.style.display = 'block';
+    createTab(true);
+    if (window.location.hash) {
+        handleSubmit(decodeURIComponent(window.location.hash.substring(1)));
+        history.replaceState(null, null, location.pathname);
     }
-}, 2000);
+}
 
-window.handleSidebarHover = function(isHovering) {
-    const sidebarWrapper = document.getElementById('sidebar-wrapper');
-    if (isHovering) {
-        sidebarWrapper.classList.add('expanded');
-    } else {
-        sidebarWrapper.classList.remove('expanded');
-    }
-};
+// =====================================================
+// BULLETPROOF TAB MANAGEMENT
+// =====================================================
+function createTab(makeActive = true) {
+    const frame = sharedScramjet.createFrame();
+    const tab = {
+        id: nextTabId++,
+        title: "New Tab",
+        url: "NT.html",
+        frame,
+        loading: false,
+        favicon: null,
+        timeoutTracker: null
+    };
 
-window.loadPage = function(url, element) {
-    const loader = document.getElementById('loaderOverlay');
-    loader.style.display = 'flex';
-    setTimeout(() => {
-        loader.style.opacity = '1';
-    }, 10);
-    document.getElementById('mainFrame').src = url;
-    document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
-    element.classList.add('active');
-};
+    frame.frame.src = "NT.html";
 
-window.hideLoader = function() {
-    setTimeout(() => {
-        const loader = document.getElementById('loaderOverlay');
-        loader.style.opacity = '0';
-        setTimeout(() => {
-            loader.style.display = 'none';
-        }, 800); 
-    }, 1200); 
-};
+    frame.addEventListener("urlchange", (e) => {
+        tab.url = e.url;
+        tab.loading = true;
+        document.getElementById("error").style.display = "none";
 
-document.addEventListener('keydown', (e) => {
-    if (e.key === '`') {
-        const app = document.getElementById('app-container');
-        const ship = document.getElementById('custom-v-cursor');
+        if (tab.id === activeTabId) showIframeLoading(true, tab.url);
+
+        try {
+            const urlObj = new URL(e.url);
+            tab.title = urlObj.hostname;
+            tab.favicon = `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=32`;
+        } catch {
+            tab.title = "Browsing";
+            tab.favicon = null;
+        }
         
-        if (document.body.classList.contains('game-active')) {
-            document.body.classList.remove('game-active');
-            app.style.display = 'none';
-            ship.style.display = 'none';
-        } else {
-            document.body.classList.add('game-active');
-            app.style.display = 'flex';
-            ship.style.display = 'block';
+        updateTabsUI();
+        updateAddressBar();
+        updateLoadingBar(tab, 10);
+
+        // Kill Switch: If it takes longer than 15 seconds, assume proxy failure.
+        clearTimeout(tab.timeoutTracker);
+        tab.timeoutTracker = setTimeout(() => {
+            if (tab.loading && tab.id === activeTabId && tab.url && !tab.url.includes('NT.html')) {
+                showIframeLoading(false);
+                document.getElementById("error").style.display = "flex";
+                document.getElementById("error-message").textContent = "Connection Timed Out. The server took too long to respond.";
+                tab.loading = false;
+                updateLoadingBar(tab, 100);
+            }
+        }, 15000);
+    });
+
+    frame.frame.addEventListener('load', () => {
+        tab.loading = false;
+        clearTimeout(tab.timeoutTracker);
+
+        if (tab.id === activeTabId) showIframeLoading(false);
+
+        // --- BULLETPROOF BLANK PAGE DETECTOR ---
+        let isBlank = false;
+        try {
+            const frameDoc = frame.frame.contentDocument || frame.frame.contentWindow.document;
+            if (frameDoc && frameDoc.body && frameDoc.body.innerHTML.trim() === "" && tab.url && !tab.url.includes('NT.html')) {
+                isBlank = true;
+            }
+        } catch (e) {
+            // Cross-origin error means it actually loaded successfully!
+            isBlank = false; 
         }
+
+        if (isBlank && tab.id === activeTabId) {
+            document.getElementById("error").style.display = "flex";
+            document.getElementById("error-message").textContent = "The server returned an empty page. The site might be blocking proxies.";
+        } else if (tab.id === activeTabId) {
+            document.getElementById("error").style.display = "none";
+        }
+        // ---------------------------------------
+
+        try { const title = frame.frame.contentWindow.document.title; if (title) tab.title = title; } catch {}
+
+        if (frame.frame.contentWindow.location.href.includes('NT.html')) {
+            tab.title = "New Tab"; tab.url = ""; tab.favicon = null;
+        }
+
+        updateTabsUI();
+        updateAddressBar();
+        updateLoadingBar(tab, 100);
+    });
+
+    tabs.push(tab);
+    document.getElementById("iframe-container").appendChild(frame.frame);
+    if (makeActive) switchTab(tab.id);
+    return tab;
+}
+
+function showIframeLoading(show, url = '') {
+    const loader = document.getElementById("loading");
+    if (!loader) return;
+    loader.style.display = show ? "flex" : "none";
+    getActiveTab()?.frame.frame.classList.toggle('loading', show);
+    if (show) {
+        document.getElementById("loading-title").textContent = "Connecting";
+        document.getElementById("loading-url").textContent = url || "Loading content...";
+        document.getElementById("skip-btn").style.display = 'none';
+        setTimeout(() => { if (document.getElementById("skip-btn")) document.getElementById("skip-btn").style.display = 'inline-block'; }, 3000);
     }
-});
+}
 
-const ship = document.getElementById('custom-v-cursor');
-const iframeWrapper = document.getElementById('iframe-wrapper');
+function switchTab(tabId) {
+    activeTabId = tabId;
+    const tab = getActiveTab();
+    tabs.forEach(t => t.frame.frame.classList.toggle("hidden", t.id !== tabId));
+    
+    // Clear error UI when switching tabs
+    document.getElementById("error").style.display = "none";
 
-let mouseX = window.innerWidth / 2, mouseY = window.innerHeight / 2;
-let shipX = window.innerWidth / 2, shipY = window.innerHeight / 2;
-let currentAngle = 0;
-let isCursorVisible = false;
+    if (tab) showIframeLoading(tab.loading, tab.url);
+    updateTabsUI();
+    updateAddressBar();
+}
 
-document.addEventListener('mousemove', (e) => {
-    if (!document.body.classList.contains('game-active')) return;
+function closeTab(tabId) {
+    const idx = tabs.findIndex(t => t.id === tabId);
+    if (idx === -1) return;
+    const tab = tabs[idx];
+    clearTimeout(tab.timeoutTracker);
+    if (tab.frame?.frame) { tab.frame.frame.src = 'about:blank'; tab.frame.frame.remove(); }
+    tabs.splice(idx, 1);
+    if (activeTabId === tabId) {
+        if (tabs.length > 0) switchTab(tabs[Math.max(0, idx - 1)].id);
+        else window.location.reload();
+    } else { updateTabsUI(); }
+}
 
-    mouseX = e.clientX;
-    mouseY = e.clientY;
+function updateTabsUI() {
+    const container = document.getElementById("tabs-container");
+    container.innerHTML = "";
+    tabs.forEach(tab => {
+        const el = document.createElement("div");
+        el.className = `tab ${tab.id === activeTabId ? "active" : ""}`;
+        const iconHtml = tab.loading ? `<div class="tab-spinner"></div>` : tab.favicon ? `<img src="${tab.favicon}" class="tab-favicon" onerror="this.style.display='none'">` : '';
+        el.innerHTML = `${iconHtml}<span class="tab-title">${tab.title}</span><span class="tab-close">&times;</span>`;
+        el.onclick = () => switchTab(tab.id);
+        el.querySelector(".tab-close").onclick = (e) => { e.stopPropagation(); closeTab(tab.id); };
+        container.appendChild(el);
+    });
+    const newBtn = document.createElement("button");
+    newBtn.className = "new-tab"; newBtn.innerHTML = "<i class='fa-solid fa-plus'></i>";
+    newBtn.onclick = () => createTab(true);
+    container.appendChild(newBtn);
+}
 
-    const overIframe = e.target.closest('#iframe-wrapper') || e.target.tagName.toLowerCase() === 'iframe';
+function updateAddressBar() {
+    const bar = document.getElementById("address-bar");
+    const tab = getActiveTab();
+    if (bar && tab) bar.value = (tab.url && !tab.url.includes("NT.html")) ? tab.url : "";
+}
 
-    if (overIframe) {
-        if (isCursorVisible) { 
-            ship.style.opacity = '0'; 
-            isCursorVisible = false; 
-        }
+async function handleSubmit(url) {
+    await ensureServiceWorker(); // Check SW before sending request
+    const tab = getActiveTab();
+    let input = url ?? document.getElementById("address-bar").value.trim();
+    if (!input) return;
+
+    if (!input.startsWith('http')) {
+        input = input.includes('.') && !input.includes(' ') 
+            ? `https://${input}` : `https://search.brave.com/search?q=${encodeURIComponent(input)}`;
+    }
+    
+    document.getElementById("error").style.display = "none";
+    tab.loading = true;
+    showIframeLoading(true, input);
+    updateLoadingBar(tab, 10);
+    tab.frame.go(input);
+}
+
+function updateLoadingBar(tab, percent) {
+    if (tab.id !== activeTabId) return;
+    const bar = document.getElementById("loading-bar");
+    bar.style.width = percent + "%";
+    bar.style.opacity = percent === 100 ? "0" : "1";
+    if (percent === 100) setTimeout(() => { bar.style.width = "0%"; }, 200);
+}
+
+// =====================================================
+// SETTINGS UI
+// =====================================================
+function openSettings() {
+    const modal = document.getElementById('wisp-settings-modal');
+    modal.classList.remove('hidden');
+    document.getElementById('close-wisp-modal').onclick = () => modal.classList.add('hidden');
+    document.getElementById('save-custom-wisp').onclick = saveCustomWisp;
+    modal.onclick = (e) => { if (e.target === modal) modal.classList.add('hidden'); };
+    renderServerList();
+}
+
+function renderServerList() {
+    const list = document.getElementById('server-list');
+    list.innerHTML = '';
+    const currentUrl = localStorage.getItem('proxServer') ?? DEFAULT_WISP;
+    const allWisps = [...WISP_SERVERS, ...getStoredWisps()];
+
+    allWisps.forEach((server, index) => {
+        const isActive = server.url === currentUrl;
+        const isCustom = index >= WISP_SERVERS.length;
+        const item = document.createElement('div');
+        item.className = `wisp-option ${isActive ? 'active' : ''}`;
+        const deleteBtn = isCustom ? `<button class="delete-wisp-btn" onclick="event.stopPropagation(); deleteCustomWisp('${server.url}')"><i class="fa-solid fa-trash"></i></button>` : '';
+        item.innerHTML = `
+            <div class="wisp-option-header">
+                <div class="wisp-option-name">${server.name} ${isActive ? '<i class="fa-solid fa-check" style="margin-left:8px; font-size: 0.7em; color: var(--accent);"></i>' : ''}</div>
+                <div class="server-status"><span class="ping-text">...</span><div class="status-indicator"></div>${deleteBtn}</div>
+            </div>
+            <div class="wisp-option-url">${server.url}</div>
+        `;
+        item.onclick = () => setWisp(server.url);
+        list.appendChild(item);
+        checkServerHealth(server.url, item);
+    });
+
+    const isAutoswitch = localStorage.getItem('wispAutoswitch') !== 'false';
+    const toggleContainer = document.createElement('div');
+    toggleContainer.className = 'wisp-option';
+    toggleContainer.style.cssText = 'margin-top: 10px; cursor: default;';
+    toggleContainer.innerHTML = `<div class="wisp-option-header" style="justify-content: space-between;"><div class="wisp-option-name"><i class="fa-solid fa-rotate" style="margin-right:8px"></i> Auto-switch on failure</div><div class="toggle-switch ${isAutoswitch ? 'active' : ''}" id="autoswitch-toggle"><div class="toggle-knob"></div></div></div>`;
+    toggleContainer.onclick = () => {
+        const newState = !isAutoswitch;
+        localStorage.setItem('wispAutoswitch', newState);
+        document.getElementById('autoswitch-toggle').classList.toggle('active', newState);
+        navigator.serviceWorker.controller?.postMessage({ type: 'config', autoswitch: newState });
+    };
+    list.appendChild(toggleContainer);
+}
+
+function saveCustomWisp() {
+    const input = document.getElementById('custom-wisp-input');
+    const url = input.value.trim();
+    if (!url) return;
+    if (!url.startsWith('ws://') && !url.startsWith('wss://')) return notify('error', 'Invalid URL', 'URL must start with wss:// or ws://');
+    
+    const customWisps = getStoredWisps();
+    if (customWisps.some(w => w.url === url) || WISP_SERVERS.some(w => w.url === url)) return notify('warning', 'Already Exists', 'Server already exists.');
+    
+    customWisps.push({ name: `Custom ${customWisps.length + 1}`, url });
+    localStorage.setItem('customWisps', JSON.stringify(customWisps));
+    setWisp(url);
+    input.value = '';
+}
+
+window.deleteCustomWisp = function (urlToDelete) {
+    if (!confirm("Remove this server?")) return;
+    localStorage.setItem('customWisps', JSON.stringify(getStoredWisps().filter(w => w.url !== urlToDelete)));
+    if (localStorage.getItem('proxServer') === urlToDelete) setWisp(DEFAULT_WISP); else renderServerList();
+};
+
+async function checkServerHealth(url, element) {
+    const dot = element.querySelector('.status-indicator');
+    const text = element.querySelector('.ping-text');
+    const res = await pingWispServer(url, 2000);
+    if (res.success) {
+        dot.classList.add('status-success');
+        text.textContent = `${res.latency}ms`;
     } else {
-        if (!isCursorVisible) { 
-            ship.style.opacity = '1'; 
-            isCursorVisible = true; 
+        dot.classList.add('status-error');
+        text.textContent = "Offline";
+    }
+}
+
+function setWisp(url) {
+    localStorage.setItem('proxServer', url);
+    navigator.serviceWorker.controller?.postMessage({ type: 'config', wispurl: url });
+    setTimeout(() => location.reload(), 600);
+}
+
+function toggleDevTools() {
+    const win = getActiveTab()?.frame.frame.contentWindow;
+    if (!win) return;
+    if (win.eruda) { win.eruda.show(); return; }
+    const script = win.document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/eruda";
+    script.onload = () => { win.eruda.init(); win.eruda.show(); };
+    win.document.body.appendChild(script);
+}
+
+// =====================================================
+// MASTER BOOT SEQUENCE
+// =====================================================
+document.addEventListener('DOMContentLoaded', async function () {
+    try {
+        await initializeWithBestServer();
+        await getSharedScramjet();
+        await getSharedConnection();
+
+        if ('serviceWorker' in navigator) {
+            const reg = await navigator.serviceWorker.register(getBasePath() + 'sw.js', { scope: getBasePath() });
+            await navigator.serviceWorker.ready;
+            
+            const swConfig = {
+                type: "config",
+                wispurl: localStorage.getItem("proxServer") ?? DEFAULT_WISP,
+                servers: getAllWispServers(),
+                autoswitch: localStorage.getItem('wispAutoswitch') !== 'false'
+            };
+
+            const sendConfig = () => {
+                const sw = reg.active || navigator.serviceWorker.controller;
+                if (sw) sw.postMessage(swConfig);
+            };
+            sendConfig();
+            setTimeout(sendConfig, 1000); // Failsafe SW ping
         }
+        await initializeBrowser();
+    } catch (err) {
+        console.error("Initialization error:", err);
     }
 });
-
-if (iframeWrapper) {
-    iframeWrapper.addEventListener('mouseenter', () => { ship.style.opacity = '0'; isCursorVisible = false; });
-    iframeWrapper.addEventListener('mouseleave', () => { ship.style.opacity = '1'; isCursorVisible = true; });
-}
-
-document.addEventListener('mouseout', (e) => {
-    if (e.relatedTarget === null) {
-        ship.style.opacity = '0';
-        isCursorVisible = false;
-    }
-});
-
-window.addEventListener('blur', () => {
-    ship.style.opacity = '0';
-    isCursorVisible = false;
-});
-
-document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-        ship.style.opacity = '0';
-        isCursorVisible = false;
-    }
-});
-
-function animateCursor() {
-    const dx = mouseX - shipX;
-    const dy = mouseY - shipY;
-
-    shipX += dx * 0.45;
-    shipY += dy * 0.45;
-
-    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
-        let targetAngle = Math.atan2(dy, dx) * (180 / Math.PI);
-        currentAngle = targetAngle + 90;
-    }
-
-    ship.style.transform = `translate3d(${shipX - 16}px, ${shipY - 16}px, 0) rotate(${currentAngle}deg)`;
-    requestAnimationFrame(animateCursor);
-}
-
-animateCursor();
