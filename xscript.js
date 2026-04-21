@@ -79,7 +79,7 @@ const gameHTML = `
                     </div>
                     <div class="brand-text">Infinity Games</div>
                 </div>
-                <a class="nav-item active" onclick="loadPage('https://latte-x.neocities.org/abouts', this)">
+                <a class="nav-item active" onclick="loadPage('hms.html', this)">
                     <div class="icon-container"><i data-lucide="home"></i></div>
                     <span class="nav-text">Home</span>
                 </a>
@@ -107,10 +107,10 @@ const gameHTML = `
         <main id="content-area">
             <div id="iframe-shield"></div>
             <div id="iframe-wrapper">
-                <iframe id="mainFrame" src="https://latte-x.neocities.org/abouts" onload="hideLoader()"></iframe>
+                <iframe id="mainFrame" src="hms.html" onload="hideLoader()"></iframe>
                 <div id="loaderOverlay">
                     <div class="loader-ring"></div>
-                    <div class="loading-text">Loading Orbit...</div>
+                    <div class="loading-text">Loading possiblity's.</div>
                 </div>
             </div>
         </main>
