@@ -85,17 +85,22 @@ const gameHTML = `
                 </a>
                 <a class="nav-item" onclick="loadPage('https://latte-x.neocities.org/Chat%20Bot%20AI%20(A.I%20GPT)', this)">
                     <div class="icon-container"><i data-lucide="gamepad-2"></i></div>
-                    <span class="nav-text">Games</span>
+                    <span class="nav-text">Gams</span>
                 </a>
                 <a class="nav-item" onclick="loadPage('https://example.com', this)">
                     <div class="icon-container"><i data-lucide="compass"></i></div>
-                    <span class="nav-text">Proxy</span>
+                    <span class="nav-text">Prxy</span>
+                </a>
+                <a class="nav-item" onclick="loadPage('/aps.html', this)">
+                    <div class="icon-container"><i data-lucide="grid"></i></div>
+                    <span class="nav-text">apps</span>
                 </a>
                 <div class="sidebar-footer">
                     <a class="nav-item" href="#" target="_blank">
                         <div class="icon-container"><i data-lucide="message-circle"></i></div>
                         <span class="nav-text">Discord</span>
                     </a>
+                    
                 </div>
             </nav>
         </div>
